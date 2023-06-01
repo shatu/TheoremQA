@@ -12,11 +12,12 @@ from tqdm import tqdm
 import math  # Very important for evaluation
 
 def extract_answer(query: str):
-    openai.api_key = os.getenv('AZURE_KEY')
-    openai.api_type = 'azure'
-    openai.api_base = 'https://waterloogpt.openai.azure.com/'
-    openai.api_version = "2023-03-15-preview"
-    SYSTEMQ = "You are supposed to extract the numeric answer (answer or Python formula or latex form) from a given string. If there is a unit in the input, try to remove that and only keep the number. If you think there is no numerical number within the input, just return 0."
+    openai.api_key = os.getenv('OPENAI_KEY')
+    # openai.api_key = os.getenv('AZURE_KEY')
+    # openai.api_type = 'azure'
+    # openai.api_base = 'https://waterloogpt.openai.azure.com/'
+    # openai.api_version = "2023-03-15-preview"
+    SYSTEMQ = "You are supposed to extract the numeric answer (answer or Python formula or latex form) from a given string. If there is a unit in the input, try to remove that and only keep the number. If you think there is no numerical number within the input, just return None."
     # greedy decoding
     got_result = False
     full_prompt = f"""
@@ -56,12 +57,16 @@ Output: [3, 4]
 Input: 3.57 * 10^(-29)
 Output: 3.57 * math.pow(10, -29)
 
+Input: I don't know the answer.
+Output: None
+
 Input: {query}
 Output:"""
     while not got_result:
         try:
             result = openai.ChatCompletion.create(
-                engine='ChatGPT',
+                # engine='ChatGPT',
+                model='gpt-3.5-turbo-0301',
                 messages=[{"role": "system", "content": SYSTEMQ},
                           {"role": "user", "content": full_prompt}],
                 max_tokens=1028,
@@ -164,7 +169,10 @@ def contain_num_and_str(string):
 def normalize(prediction: str):
     # Preprocessing the string [Stage 1]
     if not isinstance(prediction, str):
-        prediction = str(prediction) if prediction is not None else '0'
+        if prediction is None:
+            return None
+        else:
+            prediction = str(prediction)
 
     # Replace special tokens
     if '=' in prediction:
@@ -219,14 +227,21 @@ def normalize(prediction: str):
 
     # If the prediction is empty, use dummy '0'
     if not prediction:
-        prediction = '0'
+        return None
+        # prediction = '0'
 
     # Converting the string answer to a number/list/bool/option
     try:
         prediction = eval(prediction)
     except Exception:
         # extracting the answer with ChatGPT and try again
+        print(f"Querying ChatGPT for: {prediction}")
         prediction = extract_answer(prediction)
+        print(f"ChatGPT returned: {prediction}")
+
+        if prediction == "None":
+            return None
+
         try:
             prediction = eval(prediction)
         except Exception:
@@ -238,7 +253,7 @@ def normalize(prediction: str):
                 prediction = find_numbers_in_string(prediction)
                 # If it does not find any number; boil down to base case.
                 if prediction is None:
-                    prediction = 0
+                    return None
             else:
                 prediction = tmp
                 print('Wolfram Success: ------------------', prediction)
